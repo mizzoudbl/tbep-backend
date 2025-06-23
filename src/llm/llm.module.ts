@@ -2,11 +2,12 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import * as fs from 'fs';
 import { LlmController } from './llm.controller';
 import { LlmService } from './llm.service';
+import { CitationsService } from './citations.service';
 import { NextFunction, Request, Response } from 'express';
 
 @Module({
   controllers: [LlmController],
-  providers: [LlmService],
+  providers: [LlmService, CitationsService],
 })
 export class LlmModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

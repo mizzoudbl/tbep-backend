@@ -46,7 +46,7 @@ export class LlmController {
           this.#promptStore.delete(streamID);
           const stream = await this.llmService.generateResponseStream(promptDto);
           for await (const chunk of stream) {
-            const content = chunk.choices[0].delta.content;
+            const content = chunk.choices[0]?.delta?.content;
             if (content) {
               subscriber.next({ type: 'message', data: content });
             }

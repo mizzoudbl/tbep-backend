@@ -1,16 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { Model, PromptDto } from './prompt.dto';
+import { CitationsService } from './citations.service';
 
 @Injectable()
 export class LlmService {
+  private readonly logger = new Logger(LlmService.name);
   #models: Record<Model, OpenAI> = {
     'gpt-4o': null,
     'meta/llama-3.1-405b-instruct': null,
   };
 
-  constructor(configService: ConfigService) {
+  constructor(
+    configService: ConfigService,
+    private readonly citationsService: CitationsService
+  ) {
     if (configService.get('OPENAI_API_KEY')) {
       this.#models[Model.GPT_4O] = new OpenAI({
         baseURL: 'https://api.openai.com/v1',
@@ -61,23 +66,126 @@ Please strictly follow these guidelines in your responses.`;
 
   async generateResponseStream(promptDto: PromptDto) {
     const model = promptDto.model || Model.LLAMA_3;
+    const userQuestion = promptDto.question;
 
     if (!this.isModelAvailable(model)) {
       throw new Error(`Model ${model} is not available. Please configure the appropriate API key.`);
     }
 
-    return this.#models[model].chat.completions.create({
+    this.logger.log(`Generating LLM response for question: "${userQuestion.substring(0, 50)}..."`);
+    
+    // Create the original streaming response
+    const stream = await this.#models[model].chat.completions.create({
       model: model,
       messages: [
         { role: 'system', content: this.#SYSTEM_PROMPT },
         ...(promptDto.prevMessages ?? []),
-        { role: 'user', content: promptDto.question },
+        { role: 'user', content: userQuestion },
       ],
       temperature: 0,
       top_p: 0.7,
       max_tokens: 1024,
       stream: true,
       n: 1,
+    });
+
+    // Create a custom ReadableStream that will handle both the original LLM stream
+    // and append citations after it completes
+    const citationsService = this.citationsService;
+    const logger = this.logger;
+    
+    return new ReadableStream({
+      async start(controller) {
+        try {
+          // First, stream all chunks from the original LLM response
+          for await (const chunk of stream) {
+            controller.enqueue(chunk);
+          }
+          
+          // After the LLM response completes, fetch and stream citations
+          logger.log('LLM response completed, fetching citations...');
+          
+          try {
+            // Fetch citations - default options should be fine
+            const citationResult = await citationsService.fetchCitations(userQuestion, {
+              maxCitations: 5, // Limit to 5 citations to keep response concise
+              prioritizeReviews: true // Prefer review articles
+            });
+            
+            if (citationResult?.citations?.length > 0) {
+              logger.log(`Found ${citationResult.citations.length} citations. Streaming them now.`);
+              
+              // Generate citation markdown
+              const citationMarkdown = citationsService.generateCitationMarkdown(
+                citationResult.citations
+              );
+              
+              // Only add citations if there are any meaningful ones
+              if (citationMarkdown && citationMarkdown !== 'No citations found.') {
+                // Format the chunks exactly as OpenAI would to ensure compatibility
+                // Add citations header
+                controller.enqueue({
+                  id: `citation-${Date.now()}-1`,
+                  object: 'chat.completion.chunk',
+                  created: Math.floor(Date.now() / 1000),
+                  model: model,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {
+                        content: '\n\n## Citations\n\n'
+                      },
+                      finish_reason: null
+                    }
+                  ]
+                });
+                
+                // Add citation content
+                controller.enqueue({
+                  id: `citation-${Date.now()}-2`,
+                  object: 'chat.completion.chunk',
+                  created: Math.floor(Date.now() / 1000),
+                  model: model,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {
+                        content: citationMarkdown
+                      },
+                      finish_reason: null
+                    }
+                  ]
+                });
+                
+                // Add a proper finish chunk to signal end of response
+                controller.enqueue({
+                  id: `citation-${Date.now()}-3`,
+                  object: 'chat.completion.chunk',
+                  created: Math.floor(Date.now() / 1000),
+                  model: model,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {},
+                      finish_reason: 'stop'
+                    }
+                  ]
+                });
+              }
+            } else {
+              logger.log('No citations found for this query.');
+            }
+          } catch (error) {
+            logger.error(`Error fetching citations: ${error.message}`);
+          }
+          
+          // Close the stream when done
+          controller.close();
+        } catch (error) {
+          logger.error(`Error in response stream: ${error.message}`);
+          controller.error(error);
+        }
+      }
     });
   }
 }
