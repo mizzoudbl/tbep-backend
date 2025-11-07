@@ -1,14 +1,16 @@
-import { Body, Controller, Post, HttpException, HttpStatus, Res } from '@nestjs/common';
+import { Body, Controller, Post, HttpException, HttpStatus, Res, UseGuards } from '@nestjs/common';
 import { LlmService } from './llm.service';
 import { Model, PromptDto } from './prompt.dto';
 import type { Response } from 'express';
 import { observe, updateActiveTrace } from '@langfuse/tracing';
+import { ThrottlerBehindProxyGuard } from './llm-throttle.guard';
 
 @Controller('llm')
 export class LlmController {
   constructor(private readonly llmService: LlmService) {}
 
   @Post('chat')
+  @UseGuards(ThrottlerBehindProxyGuard)
   async streamResponse(@Body() promptDto: PromptDto, @Res() res: Response) {
     // Wrap the handler with observe() to create a trace for this request
     return observe(

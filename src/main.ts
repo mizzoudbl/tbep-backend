@@ -6,13 +6,18 @@ import compression from 'compression';
 import { ConfigService } from '@nestjs/config';
 import cookieParser from 'cookie-parser';
 import { initializeLangfuseTracing } from './instrumentation';
+import { NestExpressApplication } from '@nestjs/platform-express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
 
   // Initialize Langfuse tracing after ConfigService is available
   initializeLangfuseTracing(configService);
+
+  // Trust proxy for proper IP tracking in rate limiting
+  app.set('trust proxy', 'loopback');
+
   app.enableCors({
     origin: (requestOrigin, callback) => {
       if (configService.get('NODE_ENV', 'development') === 'production') {
