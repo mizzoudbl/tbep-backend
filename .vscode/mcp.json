@@ -1,0 +1,9 @@
+{
+	"servers": {
+		"langfuse-docs": {
+			"url": "https://langfuse.com/api/mcp",
+			"type": "http"
+		}
+	},
+	"inputs": []
+}

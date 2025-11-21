@@ -21,7 +21,7 @@ import Redis from 'ioredis';
           {
             name: 'long',
             ttl: 60000, // 1 minute
-            limit: 10,
+            limit: 20,
           },
         ],
         storage: new ThrottlerStorageRedisService(
