@@ -23,7 +23,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^2.0.64",
     "@ai-sdk/openai-compatible": "^1.0.26",
-    "@apollo/server": "^5.1.0",
+    "@apollo/server": "^5.5.0",
     "@as-integrations/express5": "^1.1.2",
     "@clickhouse/client": "^1.12.1",
     "@langfuse/otel": "^4.4.1",
