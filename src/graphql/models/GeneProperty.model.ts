@@ -1,5 +1,5 @@
 import { Field, ID, ObjectType, registerEnumType } from '@nestjs/graphql';
-import { ScoredKeyValue } from './TargetDiseaseAssociation.model';
+import { ScoredKeyValue } from './ScoredKeyValue.model';
 
 @ObjectType()
 export class GeneProperty {

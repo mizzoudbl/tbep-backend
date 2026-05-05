@@ -32,9 +32,10 @@ export class GraphqlResolver {
     if (cached) {
       result = JSON.parse(cached) as Headers;
       const isDbQueryNeeded =
-        info.fieldNodes[0].selectionSet?.selections.find(
-          (val) => val.kind === Kind.FIELD && val.name.value === 'differentialExpression',
-        ) !== undefined;
+        info.fieldNodes[0].selectionSet?.selections.some(
+          (val) =>
+            val.kind === Kind.FIELD && (val.name.value === 'differentialExpression' || val.name.value === 'genetics'),
+        ) ?? false;
       if (isDbQueryNeeded === false) return result;
     }
     result = await this.graphqlService.getHeaders(diseaseId, result);

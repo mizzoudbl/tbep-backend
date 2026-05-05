@@ -5,6 +5,7 @@ export * from './DataRequired.input';
 export * from './GeneInteraction.model';
 export * from './GeneMetadata.model';
 export * from './Header.model';
+export * from './ScoredKeyValue.model';
 export * from './TargetDiseaseAssociation.model';
 export * from './OrderByEnum.enum';
 export * from './Pagination.input';

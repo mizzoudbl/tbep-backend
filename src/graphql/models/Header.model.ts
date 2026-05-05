@@ -15,6 +15,9 @@ export class Headers {
   differentialExpression?: Description[];
 
   @Field(() => [Description], { nullable: true })
+  genetics?: Description[];
+
+  @Field(() => [Description], { nullable: true })
   openTargets?: Description[];
 
   @Field(() => [Description], { nullable: true })

@@ -7,7 +7,7 @@ export const GET_HEADERS_QUERY = (cache = false) =>
     !cache
       ? `WHERE NOT EXISTS((p)<-[:HAS_PROPERTY]-(:Disease)) OR 
          EXISTS((p)<-[:HAS_PROPERTY]-(:Disease { ID: $diseaseId }))`
-      : 'WHERE p.category = "DEG"'
+      : 'WHERE p.category = "LogFC" OR p.category = "Genetics"'
   }
   WITH COLLECT(p) AS allProps
   RETURN
@@ -20,7 +20,8 @@ export const GET_HEADERS_QUERY = (cache = false) =>
         [prop IN allProps WHERE prop.category = "Pathway" | { name: prop.name, description: prop.description }] AS pathway,
         [prop IN allProps WHERE prop.category = "TE" | { name: prop.name, description: prop.description }] AS tissueSpecificity,`
   }
-    [prop IN allProps WHERE prop.category = "DEG" | { name: prop.name, description: prop.description }] AS differentialExpression
+    [prop IN allProps WHERE prop.category = "LogFC" | { name: prop.name, description: prop.description }] AS differentialExpression,
+    [prop IN allProps WHERE prop.category = "Genetics" | { name: prop.name, description: prop.description }] AS genetics
   `;
 
 export const GET_DISEASES_QUERY = `MATCH (d:Disease) RETURN d { .* } AS diseases;`;
@@ -46,17 +47,15 @@ export function GENE_INTERACTIONS_QUERY(order: number, interactionTypes: string[
         WHERE r.score >= $minScore AND g2.ID IN $geneIDs
         WITH [conn IN COLLECT({gene1: g1.ID, gene2: g2.ID, score: r.score, interactionType: type(r)}) WHERE conn.gene2 IS NOT NULL] AS links, apoc.coll.toSet(COLLECT(g1 { .ID, .Gene_name, .Description})) AS genes
         ${graphExists ? '' : ",gds.graph.project($graphName,g1,g2,{ relationshipProperties: r { .score }, relationshipType: type(r) }, { undirectedRelationshipTypes: ['*'] }) AS graph"}
-        CALL gds.localClusteringCoefficient.stats($graphName) YIELD averageClusteringCoefficient
-        RETURN genes, links, averageClusteringCoefficient
+        RETURN genes, links
         `;
     case 1:
-      return `MATCH (g1:Gene)-[r:${relTypes}]-(g2:Gene)
-        WHERE g1.ID IN $geneIDs
-        AND r.score >= $minScore
-        WITH apoc.coll.toSet(COLLECT(g1 { .ID, .Gene_name, .Description}) + COLLECT(g2 { .ID, .Gene_name, .Description})) AS genes, COLLECT({gene1: g1.ID, gene2: g2.ID, score: r.score, interactionType: type(r)}) AS links
+      return `MATCH (g1:Gene) WHERE g1.ID IN $geneIDs
+        OPTIONAL MATCH (g1)-[r:${relTypes}]-(g2:Gene)
+        WHERE r.score >= $minScore
+        WITH apoc.coll.toSet(COLLECT(g1 { .ID, .Gene_name, .Description}) + [gene IN COLLECT(g2 { .ID, .Gene_name, .Description}) WHERE gene.ID IS NOT NULL]) AS _genes, [conn IN COLLECT({gene1: g1.ID, gene2: g2.ID, score: r.score, interactionType: type(r)}) WHERE conn.gene2 IS NOT NULL] AS _links
         ${graphExists ? '' : ",gds.graph.project($graphName,g1,g2,{ relationshipProperties: r { .score }, relationshipType: type(r) }, { undirectedRelationshipTypes: ['*'] }) AS graph"}
-        CALL gds.localClusteringCoefficient.stats($graphName) YIELD averageClusteringCoefficient
-        RETURN genes, links, averageClusteringCoefficient
+        RETURN _genes[0..${process.env.NODES_LIMIT || 5000}] AS genes, _links[0..${process.env.EDGES_LIMIT || 10000}] AS links
         `;
     default:
       return '';
@@ -65,15 +64,16 @@ export function GENE_INTERACTIONS_QUERY(order: number, interactionTypes: string[
 
 export function FIRST_ORDER_GENES_QUERY(interactionTypes: string[]): string {
   const relTypes = formatInteractionTypes(interactionTypes);
-  return `MATCH (g1:Gene)-[r:${relTypes}]-(g2:Gene)
-    WHERE g1.ID IN $geneIDs AND r.score >= $minScore
-    RETURN apoc.coll.toSet(COLLECT(g1.ID) + COLLECT(g2.ID)) AS geneIDs`;
+  return `MATCH (g1:Gene) WHERE g1.ID IN $geneIDs
+    OPTIONAL MATCH (g1)-[r:${relTypes}]-(g2:Gene)
+    WHERE r.score >= $minScore
+    WITH apoc.coll.toSet(COLLECT(g1.ID) + [geneID IN COLLECT(g2.ID) WHERE geneID IS NOT NULL]) AS _geneIDs
+    RETURN _geneIDs[0..${process.env.NODES_LIMIT || 5000}] AS geneIDs`;
 }
 
 export const GRAPH_DROP_QUERY = 'CALL gds.graph.drop($graphName)';
 export function LEIDEN_QUERY(minCommunitySize: number, weighted = true): string {
-  return `CALL gds.leiden.stats($graphName, { ${weighted ? 'relationshipWeightProperty: "score",' : ''} gamma: $resolution, logProgress: false }) YIELD modularity WITH modularity
-  CALL gds.leiden.stream($graphName, { ${weighted ? 'relationshipWeightProperty: "score",' : ''} gamma: $resolution, minCommunitySize: ${minCommunitySize}, logProgress: false }) YIELD nodeId, communityId RETURN COLLECT({ID: gds.util.asNode(nodeId).ID, communityId: communityId }) AS community, modularity`;
+  return `CALL gds.leiden.stream($graphName, { ${weighted ? 'relationshipWeightProperty: "score",' : ''} gamma: $resolution, minCommunitySize: ${minCommunitySize}, logProgress: false }) YIELD nodeId, communityId RETURN gds.util.asNode(nodeId).ID AS ID, communityId`;
 }
 
 export function RENEW_QUERY(order: number, interactionTypes: string[]) {
@@ -87,9 +87,9 @@ export function RENEW_QUERY(order: number, interactionTypes: string[]) {
         FINISH
         `;
     case 1:
-      return `MATCH (g1:Gene)-[r:${relTypes}]-(g2:Gene)
-        WHERE g1.ID IN $geneIDs
-        AND r.score >= $minScore
+      return `MATCH (g1:Gene) WHERE g1.ID IN $geneIDs
+        OPTIONAL MATCH (g1)-[r:${relTypes}]-(g2:Gene)
+        WHERE r.score >= $minScore
         WITH gds.graph.project($graphName,g1,g2,{ relationshipProperties: r { .score }, relationshipType: type(r) }, { undirectedRelationshipTypes: ['*'] }) AS graph
         FINISH
         `;

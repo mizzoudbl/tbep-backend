@@ -82,11 +82,68 @@ export class GraphqlService {
     );
     await this.neo4jService.bindGraph(graphName, `user:${userID}`);
     await this.neo4jService.releaseSession(session);
+
+    const genes = result.records[0]?.get('genes') ?? [];
+    const links = mergeEdgesAndAverageScore(result.records[0]?.get('links') ?? []);
+    const averageClusteringCoefficient = this.calculateClusteringCoefficient(genes, links);
+
     return {
-      genes: result.records[0]?.get('genes') ?? [],
-      links: mergeEdgesAndAverageScore(result.records[0]?.get('links') ?? []),
-      averageClusteringCoefficient: result.records[0]?.get('averageClusteringCoefficient') ?? 0,
+      genes,
+      links,
+      averageClusteringCoefficient,
     };
+  }
+
+  private calculateClusteringCoefficient(genes: any[], links: any[]): number {
+    if (genes.length === 0) return 0;
+
+    const geneIds = new Set(genes.map((g) => g.ID));
+    const adjacencyMap = new Map<string, Set<string>>();
+
+    // Build adjacency list
+    genes.forEach((gene) => {
+      adjacencyMap.set(gene.ID, new Set());
+    });
+
+    links.forEach((link) => {
+      if (geneIds.has(link.gene1) && geneIds.has(link.gene2)) {
+        adjacencyMap.get(link.gene1)?.add(link.gene2);
+        adjacencyMap.get(link.gene2)?.add(link.gene1);
+      }
+    });
+
+    let totalCoefficient = 0;
+    let nodeCount = 0;
+
+    // Calculate clustering coefficient for each node
+    adjacencyMap.forEach((neighbors) => {
+      const k = neighbors.size;
+      if (k < 2) {
+        // Clustering coefficient is 0 for nodes with less than 2 neighbors
+        return;
+      }
+
+      let edgeCount = 0;
+      const neighborArray = Array.from(neighbors);
+
+      // Count edges between neighbors
+      for (let i = 0; i < neighborArray.length; i++) {
+        for (let j = i + 1; j < neighborArray.length; j++) {
+          const neighbor1 = neighborArray[i];
+          const neighbor2 = neighborArray[j];
+          if (adjacencyMap.get(neighbor1)?.has(neighbor2)) {
+            edgeCount++;
+          }
+        }
+      }
+
+      // Clustering coefficient for this node
+      const maxEdges = (k * (k - 1)) / 2;
+      totalCoefficient += edgeCount / maxEdges;
+      nodeCount++;
+    });
+
+    return nodeCount > 0 ? totalCoefficient / nodeCount : 0;
   }
 
   computeHash(query: string) {
@@ -98,6 +155,7 @@ export class GraphqlService {
     const res = await session.run<
       Record<
         | 'differentialExpression'
+        | 'genetics'
         | 'openTargets'
         | 'targetPrioritization'
         | 'druggability'
@@ -111,9 +169,11 @@ export class GraphqlService {
     await this.neo4jService.releaseSession(session);
     if (result) {
       result.differentialExpression = res.records[0].get('differentialExpression');
+      result.genetics = res.records[0].get('genetics');
     } else {
       result = {
         differentialExpression: res.records[0].get('differentialExpression'),
+        genetics: res.records[0].get('genetics'),
         openTargets: res.records[0].get('openTargets'),
         druggability: res.records[0].get('druggability'),
         targetPrioritization: res.records[0].get('targetPrioritization'),

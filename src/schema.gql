@@ -67,6 +67,7 @@ type GenePropertyData {
 type Headers {
   differentialExpression: [Description!]
   druggability: [Description!]
+  genetics: [Description!]
   openTargets: [Description!]
   pathway: [Description!]
   targetPrioritization: [Description!]
@@ -124,6 +125,7 @@ type Query {
   getGeneInteractions(input: InteractionInput!, order: Int!): GeneInteractionOutput!
   headers(diseaseId: String!): Headers!
   targetDiseaseAssociationTable(diseaseId: String!, geneIds: [String!]!, orderBy: OrderByEnum = SCORE, page: Pagination): TargetDiseaseAssociationTable!
+  targetPrioritizationTable(diseaseId: String!, geneIds: [String!]!, orderBy: OrderByEnum = SCORE, page: Pagination): TargetPrioritizationTable!
   topGenesByDisease(diseaseId: String!, page: Pagination): [TopGene!]!
 }
 
@@ -146,6 +148,16 @@ type TargetDiseaseAssociationRow {
 
 type TargetDiseaseAssociationTable {
   rows: [TargetDiseaseAssociationRow!]!
+  totalCount: Int
+}
+
+type TargetPrioritizationRow {
+  overall_score: Float
+  target: Target!
+}
+
+type TargetPrioritizationTable {
+  rows: [TargetPrioritizationRow!]!
   totalCount: Int
 }
 
